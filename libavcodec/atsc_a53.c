@@ -24,13 +24,18 @@
 #include "get_bits.h"
 
 int ff_alloc_a53_sei(const AVFrame *frame, size_t prefix_len,
-                     void **data, size_t *sei_size)
+                     void **data, size_t *sei_size, int sd_index)
 {
     AVFrameSideData *side_data = NULL;
     uint8_t *sei_data;
 
-    if (frame)
-        side_data = av_frame_get_side_data(frame, AV_FRAME_DATA_A53_CC);
+    if (frame) {
+        if (sd_index < 0) {
+            side_data = av_frame_get_side_data(frame, AV_FRAME_DATA_A53_CC);
+        } else {
+            side_data = frame->side_data[sd_index];
+        }
+    }
 
     if (!side_data) {
         *data = NULL;

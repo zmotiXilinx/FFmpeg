@@ -52,7 +52,7 @@ static int qsv_h264_set_encode_ctrl(AVCodecContext *avctx,
         size_t sei_size;
         int res;
 
-        res = ff_alloc_a53_sei(frame, sizeof(mfxPayload) + 2, (void**)&payload, &sei_size);
+        res = ff_alloc_a53_sei(frame, sizeof(mfxPayload) + 2, (void**)&payload, &sei_size, -1);
         if (res < 0 || !payload)
             return res;
 

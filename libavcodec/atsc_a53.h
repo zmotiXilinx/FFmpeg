@@ -38,7 +38,7 @@
  * @return           Zero on success, negative error code on failure
  */
 int ff_alloc_a53_sei(const AVFrame *frame, size_t prefix_len,
-                     void **data, size_t *sei_size);
+                     void **data, size_t *sei_size, int sd_index);
 
 /**
  * Parse a data array for ATSC A53 Part 4 Closed Captions and store them in an AVBufferRef.

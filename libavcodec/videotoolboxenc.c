@@ -2602,7 +2602,7 @@ static int vtenc_send_frame(AVCodecContext *avctx,
 #if CONFIG_ATSC_A53
     side_data = av_frame_get_side_data(frame, AV_FRAME_DATA_A53_CC);
     if (vtctx->a53_cc && side_data && side_data->size) {
-        status = ff_alloc_a53_sei(frame, 0, &node->sei.data, &node->sei.size);
+        status = ff_alloc_a53_sei(frame, 0, &node->sei.data, &node->sei.size, -1);
         if (status < 0) {
             goto out;
         }

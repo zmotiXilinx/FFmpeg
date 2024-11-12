@@ -276,7 +276,7 @@ static int vk_enc_h265_update_pic_info(AVCodecContext *avctx,
         int err;
         size_t sei_a53cc_len;
         av_freep(&enc->sei_a53cc_data);
-        err = ff_alloc_a53_sei(pic->input_image, 0, &enc->sei_a53cc_data, &sei_a53cc_len);
+        err = ff_alloc_a53_sei(pic->input_image, 0, &enc->sei_a53cc_data, &sei_a53cc_len, -1);
         if (err < 0)
             return err;
         if (enc->sei_a53cc_data != NULL) {

@@ -2578,7 +2578,7 @@ static int prepare_sei_data_array(AVCodecContext *avctx, const AVFrame *frame)
         void *a53_data = NULL;
         size_t a53_size = 0;
 
-        if (ff_alloc_a53_sei(frame, 0, &a53_data, &a53_size) < 0) {
+        if (ff_alloc_a53_sei(frame, 0, &a53_data, &a53_size, -1) < 0) {
             av_log(ctx, AV_LOG_ERROR, "Not enough memory for closed captions, skipping\n");
         }
 
