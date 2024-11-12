@@ -49,6 +49,7 @@
 #include "libaom.h"
 #include "packet_internal.h"
 #include "profiles.h"
+#include "atsc_a53.h"
 
 /*
  * Portion of struct aom_codec_cx_pkt from aom_encoder.h.
@@ -1310,6 +1311,28 @@ FF_ENABLE_DEPRECATION_WARNINGS
 
         if (frame->pict_type == AV_PICTURE_TYPE_I)
             flags |= AOM_EFLAG_FORCE_KF;
+
+        {
+            void *sei_data[16] = {NULL};
+            size_t sei_size[16] = {0};
+            int num_payloads = 0;
+
+            for (int i = 0; i < frame->nb_side_data; i++) {
+                AVFrameSideData *sd = frame->side_data[i];
+                if (sd->type == AV_FRAME_DATA_A53_CC) {
+                    int ret = ff_alloc_a53_sei(frame, 0, &sei_data[num_payloads], &sei_size[num_payloads], i);
+                    if (ret < 0) {
+                        return AVERROR(ENOMEM);
+                    }
+                    res = aom_img_add_metadata(rawimg, OBU_METADATA_TYPE_ITUT_T35,
+                            sei_data[num_payloads], sei_size[num_payloads], AOM_MIF_ANY_FRAME);
+                    av_free(sei_data[i]);
+                    if (res != AOM_CODEC_OK)
+                        return AVERROR(ENOMEM);
+                    ++num_payloads;
+                }
+            }
+        }
     }
 
     res = aom_codec_encode(&ctx->encoder, rawimg, timestamp, duration, flags);

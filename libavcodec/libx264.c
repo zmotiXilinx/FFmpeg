@@ -531,27 +531,41 @@ static int setup_frame(AVCodecContext *ctx, const AVFrame *frame,
     reconfig_encoder(ctx, frame);
 
     if (x4->a53_cc) {
-        void *sei_data;
-        size_t sei_size;
+        void *sei_data[16]; // MAX number of A53 CC sei payloads allowed
+        size_t sei_size[16];
+        int num_payloads = 0;
+        size_t total_sei_payload_size = 0;
 
-        ret = ff_alloc_a53_sei(frame, 0, &sei_data, &sei_size);
-        if (ret < 0)
-            goto fail;
+        for (int i = 0; i < frame->nb_side_data; ++i) {
+            if (frame->side_data[i]->type == AV_FRAME_DATA_A53_CC) {
+                ret = ff_alloc_a53_sei(frame, 0, &sei_data[num_payloads], &sei_size[num_payloads], i);
+                if (ret < 0) {
+                    goto fail;
+                }
+                total_sei_payload_size += sei_size[num_payloads];
+                ++num_payloads;
+            }
+        }
 
-        if (sei_data) {
-            sei->payloads = av_mallocz(sizeof(sei->payloads[0]));
+        if (total_sei_payload_size > 0) {
+            sei->payloads = av_mallocz(total_sei_payload_size);
             if (!sei->payloads) {
-                av_free(sei_data);
+                for (int i = 0; i < num_payloads; ++i) {
+                    av_free(sei_data[i]);
+                }
                 ret = AVERROR(ENOMEM);
                 goto fail;
             }
 
-            sei->sei_free = av_free;
-
-            sei->payloads[0].payload_size = sei_size;
-            sei->payloads[0].payload      = sei_data;
-            sei->payloads[0].payload_type = SEI_TYPE_USER_DATA_REGISTERED_ITU_T_T35;
-            sei->num_payloads = 1;
+            for (int i = 0; i < num_payloads; ++i) {
+                if (sei_data[i]) {
+                    sei->sei_free = av_free;
+                    sei->payloads[i].payload_size = sei_size[i];
+                    sei->payloads[i].payload      = sei_data[i];
+                    sei->payloads[i].payload_type = SEI_TYPE_USER_DATA_REGISTERED_ITU_T_T35;
+                    sei->num_payloads++;
+                }
+            }
         }
     }
 
