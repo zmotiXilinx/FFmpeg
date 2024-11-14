@@ -569,6 +569,9 @@ FF_ENABLE_DEPRECATION_WARNINGS
         memset(avctx->extradata + avctx->extradata_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
     }
 
+    ctx->sei_data = av_malloc_array(16, sizeof(x265_sei_payload));
+    ctx->sei_data_size = 0;
+
     return 0;
 }
 
@@ -726,64 +729,81 @@ static int libx265_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         x265pic.userData = (void*)(intptr_t)(rd_idx + 1);
 
         if (ctx->a53_cc) {
-            void *sei_data;
-            size_t sei_size;
-
-            ret = ff_alloc_a53_sei(pic, 0, &sei_data, &sei_size);
-            if (ret < 0) {
-                av_log(ctx, AV_LOG_ERROR, "Not enough memory for closed captions, skipping\n");
-            } else if (sei_data) {
-                void *tmp;
-                x265_sei_payload *sei_payload;
-
-                tmp = av_fast_realloc(ctx->sei_data,
-                        &ctx->sei_data_size,
-                        (sei->numPayloads + 1) * sizeof(*sei_payload));
-                if (!tmp) {
-                    av_free(sei_data);
-                    free_picture(ctx, &x265pic);
-                    return AVERROR(ENOMEM);
-                }
-                ctx->sei_data = tmp;
-                sei->payloads = ctx->sei_data;
-                sei_payload = &sei->payloads[sei->numPayloads];
-                sei_payload->payload = sei_data;
-                sei_payload->payloadSize = sei_size;
-                sei_payload->payloadType = SEI_TYPE_USER_DATA_REGISTERED_ITU_T_T35;
-                sei->numPayloads++;
-            }
-        }
-
-        if (ctx->udu_sei) {
-            for (i = 0; i < pic->nb_side_data; i++) {
+            int frameCCSeiCounts = 0;
+            for (int i = 0; i < pic->nb_side_data; ++i) {
                 AVFrameSideData *side_data = pic->side_data[i];
-                void *tmp;
-                x265_sei_payload *sei_payload;
-
-                if (side_data->type != AV_FRAME_DATA_SEI_UNREGISTERED)
-                    continue;
-
-                tmp = av_fast_realloc(ctx->sei_data,
-                        &ctx->sei_data_size,
-                        (sei->numPayloads + 1) * sizeof(*sei_payload));
-                if (!tmp) {
+                if (side_data->type == AV_FRAME_DATA_A53_CC) {
+                    frameCCSeiCounts++;
+                }
+            }
+            if (frameCCSeiCounts > 0) {
+                sei->payloads = av_mallocz((frameCCSeiCounts + 16) * sizeof(x265_sei_payload));
+                sei->numPayloads = 0;
+                if (!sei->payloads) {
                     free_picture(ctx, &x265pic);
                     return AVERROR(ENOMEM);
                 }
-                ctx->sei_data = tmp;
-                sei->payloads = ctx->sei_data;
-                sei_payload = &sei->payloads[sei->numPayloads];
-                sei_payload->payload = av_memdup(side_data->data, side_data->size);
-                if (!sei_payload->payload) {
-                    free_picture(ctx, &x265pic);
-                    return AVERROR(ENOMEM);
+                for (int i = 0; i < pic->nb_side_data; ++i) {
+                    AVFrameSideData *side_data = pic->side_data[i];
+                    void* sei_data = NULL;
+                    size_t sei_size = 0;
+                    x265_sei_payload* sei_payload = &((x265_sei_payload*)sei->payloads)[sei->numPayloads];
+
+                    if (side_data->type != AV_FRAME_DATA_A53_CC) {
+                        continue;
+                    }
+
+                    ret = ff_alloc_a53_sei(pic, 0, &sei_data, &sei_size, i);
+                    if (ret < 0) {
+                        av_log(ctx, AV_LOG_ERROR, "Not enough memory for closed captions, skipping\n");
+                    }
+
+                    sei_payload->payload = sei_data;
+                    sei_payload->payloadSize = sei_size;
+                    sei_payload->payloadType = USER_DATA_REGISTERED_ITU_T_T35;
+                    sei->numPayloads++;
                 }
-                sei_payload->payloadSize = side_data->size;
-                /* Equal to libx265 USER_DATA_UNREGISTERED */
-                sei_payload->payloadType = SEI_TYPE_USER_DATA_UNREGISTERED;
-                sei->numPayloads++;
+                // av_log(ctx, AV_LOG_ERROR, "**** Closed captions SEI %p (num=%d) added ****\n", sei->payloads, sei->numPayloads);
+                // for (int i = 0; i < sei->numPayloads; i++) {
+                //     x265_sei_payload* payload = &sei->payloads[i];
+                //     av_log(ctx, AV_LOG_ERROR, "      sei->payload[%d]: %p \n", i, sei->payloads[i].payload);
+                //     av_log(ctx, AV_LOG_ERROR, "           payload: %p \n", payload->payload);
+                //     av_log(ctx, AV_LOG_ERROR, "              type: %d \n", (int)payload->payloadType);
+                //     av_log(ctx, AV_LOG_ERROR, "       payloadSize: %d \n", payload->payloadSize);
+                // }
             }
         }
+
+        // if (ctx->udu_sei) {
+        //     for (i = 0; i < pic->nb_side_data; i++) {
+        //         AVFrameSideData *side_data = pic->side_data[i];
+        //         void *tmp;
+        //         x265_sei_payload *sei_payload;
+
+        //         if (side_data->type != AV_FRAME_DATA_SEI_UNREGISTERED)
+        //             continue;
+
+        //         tmp = av_fast_realloc(ctx->sei_data,
+        //                 &ctx->sei_data_size,
+        //                 (sei->numPayloads + 1) * sizeof(*sei_payload));
+        //         if (!tmp) {
+        //             free_picture(ctx, &x265pic);
+        //             return AVERROR(ENOMEM);
+        //         }
+        //         ctx->sei_data = tmp;
+        //         sei->payloads = ctx->sei_data;
+        //         sei_payload = &sei->payloads[sei->numPayloads];
+        //         sei_payload->payload = av_memdup(side_data->data, side_data->size);
+        //         if (!sei_payload->payload) {
+        //             free_picture(ctx, &x265pic);
+        //             return AVERROR(ENOMEM);
+        //         }
+        //         sei_payload->payloadSize = side_data->size;
+        //         /* Equal to libx265 USER_DATA_UNREGISTERED */
+        //         sei_payload->payloadType = SEI_TYPE_USER_DATA_UNREGISTERED;
+        //         sei->numPayloads++;
+        //     }
+        // }
 
 #if X265_BUILD >= 167
         sd = av_frame_get_side_data(pic, AV_FRAME_DATA_DOVI_METADATA);

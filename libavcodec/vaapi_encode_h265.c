@@ -599,7 +599,7 @@ static int vaapi_encode_h265_init_picture_params(AVCodecContext *avctx,
         int err;
         size_t sei_a53cc_len;
         av_freep(&priv->sei_a53cc_data);
-        err = ff_alloc_a53_sei(pic->input_image, 0, &priv->sei_a53cc_data, &sei_a53cc_len);
+        err = ff_alloc_a53_sei(pic->input_image, 0, &priv->sei_a53cc_data, &sei_a53cc_len, -1);
         if (err < 0)
             return err;
         if (priv->sei_a53cc_data != NULL) {

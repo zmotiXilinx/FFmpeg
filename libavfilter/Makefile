@@ -295,6 +295,17 @@ OBJS-$(CONFIG_DRAWGRAPH_FILTER)              += f_drawgraph.o
 OBJS-$(CONFIG_DRAWGRID_FILTER)               += vf_drawbox.o
 OBJS-$(CONFIG_DRAWTEXT_FILTER)               += vf_drawtext.o textutils.o
 OBJS-$(CONFIG_EDGEDETECT_FILTER)             += vf_edgedetect.o edge_common.o
+OBJS-$(CONFIG_INJECT_CC_FILTER)              += vf_inject_cc.o \
+                                                libcaption/caption.o \
+                                                libcaption/cea708.o \
+                                                libcaption/eia608.o \
+                                                libcaption/eia608_charmap.o \
+                                                libcaption/eia608_from_utf8.o \
+                                                libcaption/mpeg.o \
+                                                libcaption/srt.o \
+                                                libcaption/utf8.o \
+                                                libcaption/vtt.o \
+                                                libcaption/xds.o
 OBJS-$(CONFIG_ELBG_FILTER)                   += vf_elbg.o
 OBJS-$(CONFIG_ENTROPY_FILTER)                += vf_entropy.o
 OBJS-$(CONFIG_EPX_FILTER)                    += vf_epx.o

@@ -41,6 +41,7 @@
 #include "packet_internal.h"
 #include "avcodec.h"
 #include "profiles.h"
+#include "atsc_a53.h"
 
 typedef enum eos_status {
     EOS_NOT_REACHED = 0,
@@ -552,6 +553,28 @@ static int eb_send_frame(AVCodecContext *avctx, const AVFrame *frame)
         av_log(avctx, AV_LOG_ERROR, "Dolby Vision enabled, but received frame "
                "without AV_FRAME_DATA_DOVI_METADATA\n");
         return AVERROR_INVALIDDATA;
+    }
+
+    {
+        void *sei_data[16] = {NULL};
+        size_t sei_size[16] = {0};
+        int num_payloads = 0;
+
+        for (int i = 0; i < frame->nb_side_data; i++) {
+            AVFrameSideData *sd = frame->side_data[i];
+            if (sd->type == AV_FRAME_DATA_A53_CC) {
+                int ret = ff_alloc_a53_sei(frame, 0, &sei_data[num_payloads], &sei_size[num_payloads], i);
+                if (ret < 0) {
+                    return AVERROR(ENOMEM);
+                }
+                ret = svt_add_metadata(headerPtr, EB_AV1_METADATA_TYPE_ITUT_T35, 
+                        sei_data[num_payloads], sei_size[num_payloads]);
+                av_free(sei_data[i]);
+                if (ret < 0)
+                    return AVERROR(ENOMEM);
+                ++num_payloads;
+            }
+        }
     }
 
 
