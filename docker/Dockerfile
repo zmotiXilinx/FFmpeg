@@ -33,7 +33,7 @@ RUN apt update -qq && apt -y install \
   zlib1g-dev
 
 # required for meson
-RUN apt -y install libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev
+RUN apt -y install libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev liblzma-dev
 RUN cd /tmp; \
     wget https://www.python.org/ftp/python/3.12.6/Python-3.12.6.tgz; \
     tar -xvf Python-3.12.6.tgz && cd Python-3.12.6; \
@@ -41,6 +41,7 @@ RUN cd /tmp; \
     make -j$(nproc) && make install;
 
 RUN pip3 install meson
+RUN pip3 install staticx setuptools patchelf
 
 RUN if getent group ${GROUP_NAME} ; then groupdel ${GROUP_NAME}; fi &&\
 groupadd -g ${GROUP_ID} ${GROUP_NAME} &&\

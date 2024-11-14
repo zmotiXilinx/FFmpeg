@@ -61,4 +61,13 @@ if [[ $1 == "prod" ]]; then
   fi
 
   make -j$(nproc)
+
+  rm -rf staticx
+  mkdir -p staticx
+  pushd staticx
+  staticx ../ffmpeg ffmpeg
+  staticx ../ffmpeg_g ffmpeg_g
+  staticx ../ffprobe_g ffprobe_g
+  staticx ../ffprobe ffprobe
+  popd
 fi

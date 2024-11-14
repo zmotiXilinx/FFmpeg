@@ -10,5 +10,5 @@ ARTIFACTS=(
 )
 
 for f in ${ARTIFACTS[@]}; do
-  scp $f zohaibm@xsjzohaibm44x:/proj/xsjhdstaff6/zohaibm/local/ffmpeg/bin/.
+  scp staticx/$f zohaibm@xsjzohaibm44x:/proj/xsjhdstaff6/zohaibm/local/ffmpeg/bin/.
 done
