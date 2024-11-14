@@ -32,6 +32,7 @@ typedef struct InjectCCContext {
     srt_t* srt;
     int frameCount;
     srt_cue_t* srtCue;
+    int clear_cc_payload_sent;
 } InjectCCContext;
 
 #define OFFSET(x) offsetof(InjectCCContext, x)
@@ -61,6 +62,7 @@ static av_cold int init(AVFilterContext *ctx)
     }
     ccCtx->srtData->m_size = 0;
     ccCtx->frameCount = 0;
+    ccCtx->clear_cc_payload_sent = 0;
 
     return 0;
 }
@@ -147,14 +149,14 @@ static int insert_cc_text_to_frame_side_data(AVFilterContext *ctx, const char* t
     int ret = 1;
     int count = 0;
 
-    if (!text) {
-        return 0;
-    }
-
     sei_init(&sei, ts);
-    caption_frame_init(&ccFrame);
-    caption_frame_from_text(&ccFrame, text);
-    sei_from_caption_frame(&sei, &ccFrame);
+    if (text) {
+        caption_frame_init(&ccFrame);
+        caption_frame_from_text(&ccFrame, text);
+        sei_from_caption_frame(&sei, &ccFrame);
+    } else {
+        sei_from_caption_clear(&sei);
+    }
 
     // sei_dump(&sei);
 
@@ -240,6 +242,12 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
                 return ret;
             }
         }
+    } else {
+        if (!ccCtx->clear_cc_payload_sent) {
+            av_log(ctx, AV_LOG_DEBUG, "Clearing CC payload\n");
+            insert_cc_text_to_frame_side_data(ctx, NULL, out, frameTimestamp);
+            ccCtx->clear_cc_payload_sent = 1;
+        }
     }
 
     ccCtx->frameCount += 1;
@@ -248,6 +256,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     if (ccCtx->srtCue && nextFrameTimestamp > (ccCtx->srtCue->timestamp + ccCtx->srtCue->duration)) {
         av_log(ctx, AV_LOG_DEBUG, "SRT: advancing to next cue\n");
         ccCtx->srtCue = ccCtx->srtCue->next;
+        ccCtx->clear_cc_payload_sent = 0;
     }
 
     if (!direct)
