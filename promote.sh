@@ -12,3 +12,4 @@ ARTIFACTS=(
 for f in ${ARTIFACTS[@]}; do
   scp staticx/$f zohaibm@xsjzohaibm44x:/proj/xsjhdstaff6/zohaibm/local/ffmpeg/bin/.
 done
+ssh zohaibm@xsjzohaibm44x "chmod a+rx /proj/xsjhdstaff6/zohaibm/local/ffmpeg/bin/*"
