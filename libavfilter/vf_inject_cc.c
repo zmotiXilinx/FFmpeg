@@ -49,7 +49,7 @@ static av_cold int init(AVFilterContext *ctx)
 {
     InjectCCContext *ccCtx = ctx->priv;
 
-    ccCtx->srtFd = open(ccCtx->filename, O_RDWR);
+    ccCtx->srtFd = open(ccCtx->filename, O_RDONLY);
     if (ccCtx->srtFd < 0) {
         av_log(ctx, AV_LOG_ERROR, "Failed to open file %s\n", ccCtx->filename);
         return AVERROR(EINVAL);
