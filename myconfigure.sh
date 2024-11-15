@@ -26,6 +26,9 @@ PATH="$HOME/bin:$PATH" PKG_CONFIG_PATH="$HOME/ffmpeg/build/lib/pkgconfig" ./conf
   --disable-doc \
   --disable-ffplay \
   --disable-ffprobe
+
+make -j$(nproc)
+
 fi
 
 

@@ -31,6 +31,8 @@ extern "C" {
 #include "eia608.h"
 #include "vtt.h"
 
+#include <stdio.h>
+
 // timestamp and duration are in seconds
 typedef vtt_t srt_t;
 typedef vtt_block_t srt_cue_t;
@@ -83,7 +85,7 @@ static inline srt_cue_t* srt_cue_new(srt_t* srt, const utf8_char_t* data, size_t
 */
 static inline int srt_cue_to_caption_frame(srt_cue_t* cue, caption_frame_t* frame) { return vtt_cue_to_caption_frame(cue, frame); };
 
-void srt_dump(srt_t* srt);
+void srt_dump(srt_t* srt, FILE* srtFp);
 /*! \brief
     \param
 */
