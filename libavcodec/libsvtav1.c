@@ -30,10 +30,14 @@
 #include "libavutil/imgutils.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/mastering_display_metadata.h"
+#include "libavutil/hdr_dynamic_metadata.h"
 #include "libavutil/mem.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/avassert.h"
+
+#include "libavcodec/bytestream.h"
+#include "libavcodec/itut35.h"
 
 #include "codec_internal.h"
 #include "dovi_rpu.h"
@@ -555,26 +559,45 @@ static int eb_send_frame(AVCodecContext *avctx, const AVFrame *frame)
         return AVERROR_INVALIDDATA;
     }
 
-    {
-        void *sei_data[16] = {NULL};
-        size_t sei_size[16] = {0};
-        int num_payloads = 0;
-
-        for (int i = 0; i < frame->nb_side_data; i++) {
-            AVFrameSideData *sd = frame->side_data[i];
-            if (sd->type == AV_FRAME_DATA_A53_CC) {
-                int ret = ff_alloc_a53_sei(frame, 0, &sei_data[num_payloads], &sei_size[num_payloads], i);
-                if (ret < 0) {
-                    return AVERROR(ENOMEM);
-                }
-                ret = svt_add_metadata(headerPtr, EB_AV1_METADATA_TYPE_ITUT_T35, 
-                        sei_data[num_payloads], sei_size[num_payloads]);
-                av_free(sei_data[i]);
-                if (ret < 0)
-                    return AVERROR(ENOMEM);
-                ++num_payloads;
+    for (int i = 0; i < frame->nb_side_data; i++) {
+        void *sei_data = NULL;
+        size_t sei_size = 0;
+        AVFrameSideData *sd = frame->side_data[i];
+        if (sd->type == AV_FRAME_DATA_A53_CC) {
+            int ret = ff_alloc_a53_sei(frame, 0, &sei_data, &sei_size, i);
+            if (ret < 0) {
+                return AVERROR(ENOMEM);
             }
+            ret = svt_add_metadata(headerPtr, EB_AV1_METADATA_TYPE_ITUT_T35, sei_data, sei_size);
+            av_free(sei_data);
+            if (ret < 0)
+                return AVERROR(ENOMEM);
         }
+    }
+
+    if (sd = av_frame_get_side_data(frame, AV_FRAME_DATA_DYNAMIC_HDR_PLUS)) {
+        AVDynamicHDRPlus* hdr_plus = (AVDynamicHDRPlus*)sd->data;
+        size_t sei_size = 6 + AV_HDR_PLUS_MAX_PAYLOAD_SIZE;
+        uint8_t* sei_data = av_malloc(sei_size);
+        if (!sei_data) {
+            av_log(avctx, AV_LOG_ERROR, "Not enough memory for HDR10+ SEI, skipping\n");
+            return AVERROR(ENOMEM);
+        }
+        size_t payload_size = sei_size - 6;
+        uint8_t* sei_data_start = sei_data;
+        bytestream_put_byte(&sei_data, ITU_T_T35_COUNTRY_CODE_US);
+        bytestream_put_be16(&sei_data, ITU_T_T35_PROVIDER_CODE_SMTPE);
+        bytestream_put_be16(&sei_data, 0x01); // provider_oriented_code
+        bytestream_put_byte(&sei_data, 0x04); // application_identifier
+        
+        ret = av_dynamic_hdr_plus_to_t35(hdr_plus, &sei_data, &payload_size);
+        if (ret < 0) {
+            av_log(avctx, AV_LOG_ERROR, "Not enough memory for HDR10+ SEI, skipping\n");
+        }
+        ret = svt_add_metadata(headerPtr, EB_AV1_METADATA_TYPE_ITUT_T35, sei_data_start, payload_size + 6);
+        av_free(sei_data_start);
+        if (ret < 0)
+            return AVERROR(ENOMEM);
     }
 
 

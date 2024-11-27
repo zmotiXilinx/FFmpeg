@@ -395,3 +395,188 @@ int av_dynamic_hdr_plus_to_t35(const AVDynamicHDRPlus *s, uint8_t **data, size_t
         *size = size_bytes;
     return 0;
 }
+
+static struct json_object *json_av_rational_to_string(const AVRational r) {
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%d/%d", r.num, r.den);
+    return json_object_new_string(buf);
+}
+
+int av_dynamic_hdr_plus_to_json(const AVDynamicHDRPlus *s, json_object* root, size_t display_frame_number) {
+    struct json_object *hdr_plus = json_object_new_object();
+    json_object_object_add(hdr_plus, "display_frame_number", json_object_new_int(display_frame_number));
+    json_object_object_add(hdr_plus, "application_version", json_object_new_int(s->application_version));
+    json_object_object_add(hdr_plus, "num_windows", json_object_new_int(s->num_windows));
+    if (s->num_windows > 0) {
+        struct json_object *windows = json_object_new_array();
+        for (int w = 0; w < s->num_windows; ++w) {
+            struct json_object *window = json_object_new_object();
+            const AVHDRPlusColorTransformParams *param = &s->params[w];
+            json_object_object_add(window, "window_upper_left_corner_x", json_av_rational_to_string(param->window_upper_left_corner_x));
+            json_object_object_add(window, "window_upper_left_corner_y", json_av_rational_to_string(param->window_upper_left_corner_y));
+            json_object_object_add(window, "window_lower_right_corner_x", json_av_rational_to_string(param->window_lower_right_corner_x));
+            json_object_object_add(window, "window_lower_right_corner_y", json_av_rational_to_string(param->window_lower_right_corner_y));
+            json_object_object_add(window, "center_of_ellipse_x", json_object_new_int(param->center_of_ellipse_x));
+            json_object_object_add(window, "center_of_ellipse_y", json_object_new_int(param->center_of_ellipse_y));
+            json_object_object_add(window, "rotation_angle", json_object_new_int(param->rotation_angle));
+            json_object_object_add(window, "semimajor_axis_internal_ellipse", json_object_new_int(param->semimajor_axis_internal_ellipse));
+            json_object_object_add(window, "semimajor_axis_external_ellipse", json_object_new_int(param->semimajor_axis_external_ellipse));
+            json_object_object_add(window, "semiminor_axis_external_ellipse", json_object_new_int(param->semiminor_axis_external_ellipse));
+            json_object_object_add(window, "overlap_process_option", json_object_new_int(param->overlap_process_option));
+            {
+                struct json_object *maxscl = json_object_new_array();
+                for (int i = 0; i < 3; ++i) {
+                    json_object_array_add(maxscl, json_av_rational_to_string(param->maxscl[i]));
+                }
+                json_object_object_add(window, "maxscl", maxscl);
+            }
+            json_object_object_add(window, "average_maxrgb", json_av_rational_to_string(param->average_maxrgb));
+            json_object_object_add(window, "num_distribution_maxrgb_percentiles", json_object_new_int(param->num_distribution_maxrgb_percentiles));
+            if (param->num_distribution_maxrgb_percentiles > 0) {
+                struct json_object *distribution_maxrgb = json_object_new_array();
+                for (int i = 0; i < param->num_distribution_maxrgb_percentiles; ++i) {
+                    struct json_object *distribution = json_object_new_object();
+                    json_object_object_add(distribution, "percentage", json_object_new_int(param->distribution_maxrgb[i].percentage));
+                    json_object_object_add(distribution, "percentile", json_av_rational_to_string(param->distribution_maxrgb[i].percentile));
+                    json_object_array_add(distribution_maxrgb, distribution);
+                }
+                json_object_object_add(window, "distribution_maxrgb", distribution_maxrgb);
+            }
+            json_object_object_add(window, "fraction_bright_pixels", json_av_rational_to_string(param->fraction_bright_pixels));
+            json_object_object_add(window, "tone_mapping_flag", json_object_new_int(param->tone_mapping_flag));
+            json_object_object_add(window, "knee_point_x", json_av_rational_to_string(param->knee_point_x));
+            json_object_object_add(window, "knee_point_y", json_av_rational_to_string(param->knee_point_y));
+            json_object_object_add(window, "num_bezier_curve_anchors", json_object_new_int(param->num_bezier_curve_anchors));
+            if (param->num_bezier_curve_anchors > 0) {
+                struct json_object *bezier_curve_anchors = json_object_new_array();
+                for (int i = 0; i < param->num_bezier_curve_anchors; ++i) {
+                    json_object_array_add(bezier_curve_anchors, json_av_rational_to_string(param->bezier_curve_anchors[i]));
+                }
+                json_object_object_add(window, "bezier_curve_anchors", bezier_curve_anchors);
+            }
+            json_object_object_add(window, "color_saturation_mapping_flag", json_object_new_int(param->color_saturation_mapping_flag));
+            json_object_object_add(window, "color_saturation_weight", json_av_rational_to_string(param->color_saturation_weight));
+            json_object_array_add(windows, window);
+        }
+        json_object_object_add(hdr_plus, "windows", windows);
+    }
+    json_object_object_add(hdr_plus, "targeted_system_display_maximum_luminance", json_av_rational_to_string(s->targeted_system_display_maximum_luminance));
+    if (s->targeted_system_display_actual_peak_luminance_flag) {
+        av_log(NULL, AV_LOG_ERROR, "targeted_system_display_actual_peak_luminance_flag is not supported\n");
+        return AVERROR(EINVAL);
+    }
+    if (s->mastering_display_actual_peak_luminance_flag) {
+        av_log(NULL, AV_LOG_ERROR, "mastering_display_actual_peak_luminance_flag is not supported\n");
+        return AVERROR(EINVAL);
+    }
+
+    json_object_array_add(root, hdr_plus);
+    return 0;
+}
+
+static AVRational json_object_get_rational(json_object *obj) {
+    const char *str = NULL;
+    int num, den;
+
+    if (!json_object_is_type(obj, json_type_string)) {
+        av_log(NULL, AV_LOG_ERROR, "Expected a string\n");
+        return (AVRational){0, 1};
+    }
+    str = json_object_get_string(obj);
+    if (sscanf(str, "%d/%d", &num, &den) != 2) {
+        av_log(NULL, AV_LOG_ERROR, "Failed to parse rational\n");
+        return (AVRational){0, 1};
+    }
+    return (AVRational){num, den};
+}
+
+
+int av_dynamic_hdr_plus_from_json(AVDynamicHDRPlus *s, struct json_object* json_hdr_plus) {
+    s->application_version = json_object_get_int(json_object_object_get(json_hdr_plus, "application_version"));
+    s->num_windows = json_object_get_int(json_object_object_get(json_hdr_plus, "num_windows"));
+    if (s->num_windows > 0) {
+        struct json_object *windows = json_object_object_get(json_hdr_plus, "windows");
+        for (int w = 0; w < s->num_windows; ++w) {
+            struct json_object *window = json_object_array_get_idx(windows, w);
+            AVHDRPlusColorTransformParams *param = &s->params[w];
+            param->window_upper_left_corner_x = json_object_get_rational(json_object_object_get(window, "window_upper_left_corner_x"));
+            param->window_upper_left_corner_y = json_object_get_rational(json_object_object_get(window, "window_upper_left_corner_y"));
+            param->window_lower_right_corner_x = json_object_get_rational(json_object_object_get(window, "window_lower_right_corner_x"));
+            param->window_lower_right_corner_y = json_object_get_rational(json_object_object_get(window, "window_lower_right_corner_y"));
+            param->center_of_ellipse_x = json_object_get_int(json_object_object_get(window, "center_of_ellipse_x"));
+            param->center_of_ellipse_y = json_object_get_int(json_object_object_get(window, "center_of_ellipse_y"));
+            param->rotation_angle = json_object_get_int(json_object_object_get(window, "rotation_angle"));
+            param->semimajor_axis_internal_ellipse = json_object_get_int(json_object_object_get(window, "semimajor_axis_internal_ellipse"));
+            param->semimajor_axis_external_ellipse = json_object_get_int(json_object_object_get(window, "semimajor_axis_external_ellipse"));
+            param->semiminor_axis_external_ellipse = json_object_get_int(json_object_object_get(window, "semiminor_axis_external_ellipse"));
+            param->overlap_process_option = json_object_get_int(json_object_object_get(window, "overlap_process_option"));
+            struct json_object *maxscl = json_object_object_get(window, "maxscl");
+            for (int i = 0; i < 3; ++i) {
+                param->maxscl[i] = json_object_get_rational(json_object_array_get_idx(maxscl, i));
+            }
+            param->average_maxrgb = json_object_get_rational(json_object_object_get(window, "average_maxrgb"));
+            param->num_distribution_maxrgb_percentiles = json_object_get_int(json_object_object_get(window, "num_distribution_maxrgb_percentiles"));
+            if (param->num_distribution_maxrgb_percentiles > 0) {
+                struct json_object *distribution_maxrgb = json_object_object_get(window, "distribution_maxrgb");
+                for (int i = 0; i < param->num_distribution_maxrgb_percentiles; ++i) {
+                    struct json_object *distribution = json_object_array_get_idx(distribution_maxrgb, i);
+                    param->distribution_maxrgb[i].percentage = json_object_get_int(json_object_object_get(distribution, "percentage"));
+                    param->distribution_maxrgb[i].percentile = json_object_get_rational(json_object_object_get(distribution, "percentile"));
+                }
+            }
+            param->fraction_bright_pixels = json_object_get_rational(json_object_object_get(window, "fraction_bright_pixels"));
+            param->tone_mapping_flag = json_object_get_int(json_object_object_get(window, "tone_mapping_flag"));
+            param->knee_point_x = json_object_get_rational(json_object_object_get(window, "knee_point_x"));
+            param->knee_point_y = json_object_get_rational(json_object_object_get(window, "knee_point_y"));
+            param->num_bezier_curve_anchors = json_object_get_int(json_object_object_get(window, "num_bezier_curve_anchors"));
+            if (param->num_bezier_curve_anchors > 0) {
+                struct json_object *bezier_curve_anchors = json_object_object_get(window, "bezier_curve_anchors");
+                for (int i = 0; i < param->num_bezier_curve_anchors; ++i) {
+                    param->bezier_curve_anchors[i] = json_object_get_rational(json_object_array_get_idx(bezier_curve_anchors, i));
+                }
+            }
+            param->color_saturation_mapping_flag = json_object_get_int(json_object_object_get(window, "color_saturation_mapping_flag"));
+            param->color_saturation_weight = json_object_get_rational(json_object_object_get(window, "color_saturation_weight"));
+        }
+    }
+    s->targeted_system_display_maximum_luminance = json_object_get_rational(json_object_object_get(json_hdr_plus, "targeted_system_display_maximum_luminance"));
+    if (json_object_object_get(json_hdr_plus, "targeted_system_display_actual_peak_luminance_flag")) {
+        av_log(NULL, AV_LOG_ERROR, "targeted_system_display_actual_peak_luminance_flag is not supported\n");
+        return AVERROR(EINVAL);
+    }
+    if (json_object_object_get(json_hdr_plus, "mastering_display_actual_peak_luminance_flag")) {
+        av_log(NULL, AV_LOG_ERROR, "mastering_display_actual_peak_luminance_flag is not supported\n");
+        return AVERROR(EINVAL);
+    }
+    return 0;
+}
+
+struct json_object *search_frame_in_array(struct json_object *array, size_t display_frame_number) {
+    // Check if the input is a valid array
+    if (!json_object_is_type(array, json_type_array)) {
+        av_log(NULL, AV_LOG_ERROR, "The input is not a valid array\n");
+        return NULL;
+    }
+
+    // Iterate through the array
+    for (int i = 0; i < json_object_array_length(array); i++) {
+        // Get the JSON object at the current index
+        struct json_object *element = json_object_array_get_idx(array, i);
+
+        // Check if the element is a JSON object
+        if (json_object_is_type(element, json_type_object)) {
+            // Look for the key in the object
+            struct json_object *found_value;
+            if (json_object_object_get_ex(element, "display_frame_number", &found_value)) {
+                // Check if the value matches
+                if (json_object_is_type(found_value, json_type_int) &&
+                    json_object_get_int(found_value) == display_frame_number) {
+                    return element; // Return the matching object
+                }
+            }
+        }
+    }
+
+    // Return NULL if no match is found
+    return NULL;
+}

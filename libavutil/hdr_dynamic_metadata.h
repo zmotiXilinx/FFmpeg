@@ -24,6 +24,8 @@
 #include "frame.h"
 #include "rational.h"
 
+#include <json-c/json.h>
+
 /**
  * Option for overlapping elliptical pixel selectors in an image.
  */
@@ -372,5 +374,33 @@ int av_dynamic_hdr_plus_from_t35(AVDynamicHDRPlus *s, const uint8_t *data,
  * @return >= 0 on success. Otherwise, returns the appropriate AVERROR.
  */
 int av_dynamic_hdr_plus_to_t35(const AVDynamicHDRPlus *s, uint8_t **data, size_t *size);
+
+/**
+ * Convert AVDynamicHDRPlus to JSON array
+ * @param s AVDynamicHDRPlus to read
+ * @param root JSON array to append the new object
+ * @param display_frame_number display frame number. This gets added to the JSON object
+ *
+ * @return 0 on success, AVERROR code on failure
+*/
+int av_dynamic_hdr_plus_to_json(const AVDynamicHDRPlus *s, struct json_object* root, size_t display_frame_number);
+
+
+/**
+ * Retrieve the dynamic HDR10+ metadata from a JSON root array for a given display frame number
+ * @param s AVDynamicHDRPlus to write. Must be allocated by the caller
+ * @param json_hdr_plus JSON object to load data from
+ *
+ * @return 0 if successful, AVERROR code on failure
+ */
+int av_dynamic_hdr_plus_from_json(AVDynamicHDRPlus *s, struct json_object* json_hdr_plus);
+
+/**
+ * Get a pointer to the dynamic HDR10+ metadata from a JSON root array for a given display frame number
+ * @param array JSON array to read and search for the frame number.
+ * @param display_frame_number display frame number to search for in the JSON array
+ * @return pointer to the JSON object corresponding to the frame number, or NULL if not found
+ */
+struct json_object *search_frame_in_array(struct json_object *array, size_t display_frame_number);
 
 #endif /* AVUTIL_HDR_DYNAMIC_METADATA_H */

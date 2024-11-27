@@ -24,6 +24,8 @@
 #define X265_API_IMPORTS 1
 #endif
 
+#define MAX_SEI_PAYLOADS 16
+
 #include <x265.h>
 #include <float.h>
 
@@ -31,9 +33,12 @@
 #include "libavutil/buffer.h"
 #include "libavutil/internal.h"
 #include "libavutil/mastering_display_metadata.h"
+#include "libavutil/hdr_dynamic_metadata.h"
 #include "libavutil/mem.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
+#include "libavcodec/bytestream.h"
+#include "libavcodec/itut35.h"
 #include "avcodec.h"
 #include "codec_internal.h"
 #include "dovi_rpu.h"
@@ -70,6 +75,7 @@ typedef struct libx265Context {
     int sei_data_size;
     int udu_sei;
     int a53_cc;
+    int hdr10plus;
 
     ReorderedData *rd;
     int         nb_rd;
@@ -569,7 +575,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
         memset(avctx->extradata + avctx->extradata_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
     }
 
-    ctx->sei_data = av_malloc_array(16, sizeof(x265_sei_payload));
+    ctx->sei_data = av_malloc_array(MAX_SEI_PAYLOADS, sizeof(x265_sei_payload));
     ctx->sei_data_size = 0;
 
     return 0;
@@ -659,6 +665,19 @@ static void free_picture(libx265Context *ctx, x265_picture *pic)
     sei->numPayloads = 0;
 }
 
+static int x265_add_t35_sei_payload(x265_sei *sei, uint8_t *data, size_t size) {
+    if (sei->numPayloads > MAX_SEI_PAYLOADS) {
+        av_log(NULL, AV_LOG_ERROR, "Not enough SEI payloads\n");
+        return AVERROR(EINVAL);
+    }
+    x265_sei_payload* sei_payload = &sei->payloads[sei->numPayloads];
+    sei_payload->payload = data;
+    sei_payload->payloadType = USER_DATA_REGISTERED_ITU_T_T35;
+    sei_payload->payloadSize = size;
+    sei->numPayloads++;
+    return 0;
+}
+
 static int libx265_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                                 const AVFrame *pic, int *got_packet)
 {
@@ -684,6 +703,7 @@ static int libx265_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
     sei = &x265pic.userSEI;
     sei->numPayloads = 0;
+    sei->payloads = ctx->sei_data;
 
     if (pic) {
         AVFrameSideData *sd;
@@ -737,17 +757,10 @@ static int libx265_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                 }
             }
             if (frameCCSeiCounts > 0) {
-                sei->payloads = av_mallocz((frameCCSeiCounts + 16) * sizeof(x265_sei_payload));
-                sei->numPayloads = 0;
-                if (!sei->payloads) {
-                    free_picture(ctx, &x265pic);
-                    return AVERROR(ENOMEM);
-                }
                 for (int i = 0; i < pic->nb_side_data; ++i) {
                     AVFrameSideData *side_data = pic->side_data[i];
                     void* sei_data = NULL;
                     size_t sei_size = 0;
-                    x265_sei_payload* sei_payload = &((x265_sei_payload*)sei->payloads)[sei->numPayloads];
 
                     if (side_data->type != AV_FRAME_DATA_A53_CC) {
                         continue;
@@ -757,11 +770,7 @@ static int libx265_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                     if (ret < 0) {
                         av_log(ctx, AV_LOG_ERROR, "Not enough memory for closed captions, skipping\n");
                     }
-
-                    sei_payload->payload = sei_data;
-                    sei_payload->payloadSize = sei_size;
-                    sei_payload->payloadType = USER_DATA_REGISTERED_ITU_T_T35;
-                    sei->numPayloads++;
+                    x265_add_t35_sei_payload(sei, sei_data, sei_size);
                 }
                 // av_log(ctx, AV_LOG_ERROR, "**** Closed captions SEI %p (num=%d) added ****\n", sei->payloads, sei->numPayloads);
                 // for (int i = 0; i < sei->numPayloads; i++) {
@@ -804,6 +813,31 @@ static int libx265_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         //         sei->numPayloads++;
         //     }
         // }
+
+        if (ctx->hdr10plus) {
+            AVFrameSideData *sd = av_frame_get_side_data(pic, AV_FRAME_DATA_DYNAMIC_HDR_PLUS);
+            if (sd) {
+                AVDynamicHDRPlus* hdr_plus = (AVDynamicHDRPlus*)sd->data;
+                size_t sei_size = 6 + AV_HDR_PLUS_MAX_PAYLOAD_SIZE;
+                uint8_t* sei_data = (uint8_t*) av_malloc(sei_size);
+                if (!sei_data) {
+                    av_log(ctx, AV_LOG_ERROR, "Not enough memory for HDR10+ SEI, skipping\n");
+                    return AVERROR(ENOMEM);
+                }
+                size_t payload_size = sei_size - 6;
+                uint8_t* sei_data_start = sei_data;
+                bytestream_put_byte(&sei_data, ITU_T_T35_COUNTRY_CODE_US);
+                bytestream_put_be16(&sei_data, ITU_T_T35_PROVIDER_CODE_SMTPE);
+                bytestream_put_be16(&sei_data, 0x01); // provider_oriented_code
+                bytestream_put_byte(&sei_data, 0x04); // application_identifier
+                
+                ret = av_dynamic_hdr_plus_to_t35(hdr_plus, &sei_data, &payload_size);
+                if (ret < 0) {
+                    av_log(ctx, AV_LOG_ERROR, "Not enough memory for HDR10+ SEI, skipping\n");
+                }
+                x265_add_t35_sei_payload(sei, sei_data_start, payload_size + 6);
+            }
+        }
 
 #if X265_BUILD >= 167
         sd = av_frame_get_side_data(pic, AV_FRAME_DATA_DOVI_METADATA);
@@ -1004,6 +1038,7 @@ static const AVOption options[] = {
     { "profile",     "set the x265 profile",                                                        OFFSET(profile),   AV_OPT_TYPE_STRING, { 0 }, 0, 0, VE },
     { "udu_sei",     "Use user data unregistered SEI if available",                                 OFFSET(udu_sei),   AV_OPT_TYPE_BOOL,   { .i64 = 0 }, 0, 1, VE },
     { "a53cc",       "Use A53 Closed Captions (if available)",                                      OFFSET(a53_cc),    AV_OPT_TYPE_BOOL,   { .i64 = 0 }, 0, 1, VE },
+    { "hdr10plus",   "Use HDR10Plus (if available)",                                                OFFSET(hdr10plus), AV_OPT_TYPE_BOOL,   { .i64 = 0 }, 0, 1, VE },
     { "x265-params", "set the x265 configuration using a :-separated list of key=value parameters", OFFSET(x265_opts), AV_OPT_TYPE_DICT,   { 0 }, 0, 0, VE },
 #if X265_BUILD >= 167
     { "dolbyvision", "Enable Dolby Vision RPU coding", OFFSET(dovi.enable), AV_OPT_TYPE_BOOL, {.i64 = FF_DOVI_AUTOMATIC }, -1, 1, VE, .unit = "dovi" },
