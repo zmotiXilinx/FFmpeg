@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <json-c/json.h>
 
 
 typedef struct ExtractHdr10PlusContext {

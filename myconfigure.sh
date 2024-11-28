@@ -3,28 +3,28 @@
 # for localdev
 if [[ $1 == "" || $1 == "dev" ]]; then
 PATH="$HOME/bin:$PATH" PKG_CONFIG_PATH="$HOME/ffmpeg/build/lib/pkgconfig" ./configure   \
-  --prefix="$HOME/ffmpeg/build" \
-  --pkg-config-flags="--static"   \
-  --extra-cflags="-I$HOME/ffmpeg/build/include"   \
-  --extra-ldflags="-L$HOME/ffmpeg/build/lib"   \
-  --extra-libs="-lpthread -lm"   \
-  --ld="g++"   \
-  --bindir="$HOME/ffmpeg/bin"   \
-  --enable-gpl   \
-  --enable-libaom   \
-  --enable-libfdk-aac   \
-  --enable-libopus   \
-  --enable-libsvtav1   \
-  --enable-libdav1d   \
-  --enable-libvpx   \
-  --enable-libx264   \
-  --enable-libx265   \
-  --enable-nonfree \
-  --disable-sndio \
-  --disable-optimizations \
-  --disable-stripping \
-  --disable-doc \
-  --disable-ffplay \
+  --prefix="$HOME/ffmpeg/build"                                                         \
+  --pkg-config-flags="--static"                                                         \
+  --extra-cflags="-I$HOME/ffmpeg/build/include -I$HOME/ffmpeg/build/include/json-c"     \
+  --extra-ldflags="-L$HOME/ffmpeg/build/lib"                                            \
+  --extra-libs="-lpthread -lm -lz -ljson-c"                                             \
+  --ld="g++"                                                                            \
+  --bindir="$HOME/ffmpeg/bin"                                                           \
+  --enable-gpl                                                                          \
+  --enable-libaom                                                                       \
+  --enable-libfdk-aac                                                                   \
+  --enable-libopus                                                                      \
+  --enable-libsvtav1                                                                    \
+  --enable-libdav1d                                                                     \
+  --enable-libvpx                                                                       \
+  --enable-libx264                                                                      \
+  --enable-libx265                                                                      \
+  --enable-nonfree                                                                      \
+  --disable-sndio                                                                       \
+  --disable-optimizations                                                               \
+  --disable-stripping                                                                   \
+  --disable-doc                                                                         \
+  --disable-ffplay                                                                      \
   --disable-ffprobe
 
 make -j$(nproc)
@@ -39,7 +39,7 @@ if [[ $1 == "prod" ]]; then
     --pkg-config-flags="--static"   \
     --extra-cflags="-I$HOME/ffmpeg/build/include"   \
     --extra-ldflags="-L$HOME/ffmpeg/build/lib"      \
-    --extra-libs="-lpthread -lm -lz"                \
+    --extra-libs="-lpthread -lm -lz -ljson-c"       \
     --ld="g++"                                      \
     --bindir="$HOME/ffmpeg/bin"                     \
     --enable-gpl                                    \
@@ -64,6 +64,11 @@ if [[ $1 == "prod" ]]; then
   fi
 
   make -j$(nproc)
+
+  if [[ $? -ne 0 ]]; then
+    echo "make failed"
+    exit 1
+  fi
 
   rm -rf staticx
   mkdir -p staticx

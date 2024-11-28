@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <json-c/json.h>
 
 typedef struct InjectHdr10PlusContext {
     const AVClass *class;
