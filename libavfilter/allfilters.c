@@ -271,6 +271,8 @@ extern const AVFilter ff_vf_drawtext;
 extern const AVFilter ff_vf_edgedetect;
 extern const AVFilter ff_vf_inject_cc;
 extern const AVFilter ff_vf_extract_cc;
+extern const AVFilter ff_vf_inject_hdr10plus;
+extern const AVFilter ff_vf_extract_hdr10plus;
 extern const AVFilter ff_vf_elbg;
 extern const AVFilter ff_vf_entropy;
 extern const AVFilter ff_vf_epx;

@@ -317,6 +317,8 @@ OBJS-$(CONFIG_EXTRACT_CC_FILTER)             += vf_extract_cc.o \
                                                 libcaption/utf8.o \
                                                 libcaption/vtt.o \
                                                 libcaption/xds.o
+OBJS-$(CONFIG_INJECT_HDR10PLUS_FILTER)       += vf_inject_hdr10plus.o
+OBJS-$(CONFIG_EXTRACT_HDR10PLUS_FILTER)      += vf_extract_hdr10plus.o
 OBJS-$(CONFIG_ELBG_FILTER)                   += vf_elbg.o
 OBJS-$(CONFIG_ENTROPY_FILTER)                += vf_entropy.o
 OBJS-$(CONFIG_EPX_FILTER)                    += vf_epx.o

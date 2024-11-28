@@ -26,12 +26,15 @@
 #include "libavutil/internal.h"
 #include "libavutil/opt.h"
 #include "libavutil/mastering_display_metadata.h"
+#include "libavutil/hdr_dynamic_metadata.h"
 #include "libavutil/mem.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/stereo3d.h"
 #include "libavutil/time.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/video_hint.h"
+#include "libavcodec/bytestream.h"
+#include "libavcodec/itut35.h"
 #include "avcodec.h"
 #include "codec_internal.h"
 #include "encode.h"
@@ -54,6 +57,8 @@
 #define MB_LSIZE 4
 #define MB_FLOOR(x)      ((x) >> (MB_LSIZE))
 #define MB_CEIL(x)       MB_FLOOR((x) + (MB_SIZE - 1))
+
+#define MAX_SEI_PAYLOADS 32
 
 typedef struct X264Opaque {
     int64_t wallclock;
@@ -110,6 +115,7 @@ typedef struct X264Context {
     int forced_idr;
     int coder;
     int a53_cc;
+    int hdr10plus;
     int b_frame_strategy;
     int chroma_offset;
     int scenechange_threshold;
@@ -302,6 +308,19 @@ static void free_picture(x264_picture_t *pic)
     pic->extra_sei.num_payloads = 0;
 }
 
+static int x264_add_t35_sei_payload(x264_sei_t *sei, uint8_t *data, size_t size) {
+    if (sei->num_payloads > MAX_SEI_PAYLOADS) {
+        av_log(NULL, AV_LOG_ERROR, "Not enough SEI payloads\n");
+        return AVERROR(EINVAL);
+    }
+    x264_sei_payload_t* sei_payload = &sei->payloads[sei->num_payloads];
+    sei_payload->payload = data;
+    sei_payload->payload_type = SEI_TYPE_USER_DATA_REGISTERED_ITU_T_T35;
+    sei_payload->payload_size = size;
+    sei->num_payloads++;
+    return 0;
+}
+
 static enum AVPixelFormat csp_to_pixfmt(int csp)
 {
     switch (csp) {
@@ -483,6 +502,12 @@ static int setup_frame(AVCodecContext *ctx, const AVFrame *frame,
         return 0;
 
     x264_picture_init(pic);
+
+    sei->num_payloads = 0;
+    sei->payloads = av_malloc_array(MAX_SEI_PAYLOADS, sizeof(x264_sei_payload_t));
+    if (!sei->payloads)
+        return AVERROR(ENOMEM);
+
     pic->img.i_csp   = x4->params.i_csp;
     if (x4->params.i_bitdepth > 8)
         pic->img.i_csp |= X264_CSP_HIGH_DEPTH;
@@ -531,41 +556,42 @@ static int setup_frame(AVCodecContext *ctx, const AVFrame *frame,
     reconfig_encoder(ctx, frame);
 
     if (x4->a53_cc) {
-        void *sei_data[16]; // MAX number of A53 CC sei payloads allowed
-        size_t sei_size[16];
-        int num_payloads = 0;
-        size_t total_sei_payload_size = 0;
-
         for (int i = 0; i < frame->nb_side_data; ++i) {
-            if (frame->side_data[i]->type == AV_FRAME_DATA_A53_CC) {
-                ret = ff_alloc_a53_sei(frame, 0, &sei_data[num_payloads], &sei_size[num_payloads], i);
-                if (ret < 0) {
-                    goto fail;
-                }
-                total_sei_payload_size += sei_size[num_payloads];
-                ++num_payloads;
+            void *sei_data = NULL;
+            size_t sei_size = 0;
+            if (frame->side_data[i]->type != AV_FRAME_DATA_A53_CC) {
+                continue;
             }
-        }
-
-        if (total_sei_payload_size > 0) {
-            sei->payloads = av_mallocz(total_sei_payload_size);
-            if (!sei->payloads) {
-                for (int i = 0; i < num_payloads; ++i) {
-                    av_free(sei_data[i]);
-                }
-                ret = AVERROR(ENOMEM);
+            ret = ff_alloc_a53_sei(frame, 0, &sei_data, &sei_size, i);
+            if (ret < 0) {
                 goto fail;
             }
+            x264_add_t35_sei_payload(sei, sei_data, sei_size);
+        }
+    }
 
-            for (int i = 0; i < num_payloads; ++i) {
-                if (sei_data[i]) {
-                    sei->sei_free = av_free;
-                    sei->payloads[i].payload_size = sei_size[i];
-                    sei->payloads[i].payload      = sei_data[i];
-                    sei->payloads[i].payload_type = SEI_TYPE_USER_DATA_REGISTERED_ITU_T_T35;
-                    sei->num_payloads++;
-                }
+    if (x4->hdr10plus) {
+        AVFrameSideData *sd = av_frame_get_side_data(frame, AV_FRAME_DATA_DYNAMIC_HDR_PLUS);
+        if (sd) {
+            AVDynamicHDRPlus* hdr_plus = (AVDynamicHDRPlus*)sd->data;
+            size_t sei_size = 6 + AV_HDR_PLUS_MAX_PAYLOAD_SIZE;
+            uint8_t* sei_data = (uint8_t*) av_malloc(sei_size);
+            if (!sei_data) {
+                av_log(ctx, AV_LOG_ERROR, "Not enough memory for HDR10+ SEI, skipping\n");
+                return AVERROR(ENOMEM);
             }
+            size_t payload_size = sei_size - 6;
+            uint8_t* sei_data_start = sei_data;
+            bytestream_put_byte(&sei_data, ITU_T_T35_COUNTRY_CODE_US);
+            bytestream_put_be16(&sei_data, ITU_T_T35_PROVIDER_CODE_SMTPE);
+            bytestream_put_be16(&sei_data, 0x01); // provider_oriented_code
+            bytestream_put_byte(&sei_data, 0x04); // application_identifier
+            
+            ret = av_dynamic_hdr_plus_to_t35(hdr_plus, &sei_data, &payload_size);
+            if (ret < 0) {
+                av_log(ctx, AV_LOG_ERROR, "Not enough memory for HDR10+ SEI, skipping\n");
+            }
+            x264_add_t35_sei_payload(sei, sei_data_start, payload_size + 6);
         }
     }
 
@@ -1523,6 +1549,7 @@ static const AVOption options[] = {
     {"passlogfile", "Filename for 2 pass stats", OFFSET(stats), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, VE},
     {"wpredp", "Weighted prediction for P-frames", OFFSET(wpredp), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, VE},
     {"a53cc",          "Use A53 Closed Captions (if available)",          OFFSET(a53_cc),        AV_OPT_TYPE_BOOL,   {.i64 = 1}, 0, 1, VE},
+    {"hdr10plus",      "Use HDR10+ data (if available)",                  OFFSET(hdr10plus),     AV_OPT_TYPE_BOOL,   {.i64 = 1}, 0, 1, VE},
     {"x264opts", "x264 options", OFFSET(x264opts), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, VE},
     { "crf",           "Select the quality for constant quality mode",    OFFSET(crf),           AV_OPT_TYPE_FLOAT,  {.dbl = -1 }, -1, FLT_MAX, VE },
     { "crf_max",       "In CRF mode, prevents VBV from lowering quality beyond this point.",OFFSET(crf_max), AV_OPT_TYPE_FLOAT, {.dbl = -1 }, -1, FLT_MAX, VE },
