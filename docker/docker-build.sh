@@ -1,3 +1,3 @@
 #!/bin/bash
 
-docker build -t ma35_ffmpeg .
+docker buildx build -t ma35_ffmpeg .

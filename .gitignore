@@ -42,3 +42,9 @@
 /mapfile
 /tools/python/__pycache__/
 staticx/
+fate-suite
+deps_build.log
+win-deps_build.log
+*.code-workspace
+.vscode/
+docker/.bash_history
