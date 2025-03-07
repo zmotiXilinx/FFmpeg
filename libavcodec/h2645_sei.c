@@ -219,8 +219,11 @@ static int decode_registered_user_data(H2645SEI *h, GetByteContext *gb,
         uint16_t provider_oriented_code;
         uint8_t application_identifier;
 
+// H264 should support SMPTE 2094-40
+#if 0
         if (!IS_HEVC(codec_id))
             goto unsupported_provider_code;
+#endif
 
         if (bytestream2_get_bytes_left(gb) < 3)
             return AVERROR_INVALIDDATA;
@@ -798,6 +801,16 @@ int ff_h2645_sei_to_frame(AVFrame *frame, H2645SEI *sei,
             av_buffer_unref(&a53->buf_ref);
         a53->buf_ref = NULL;
         avctx->properties |= FF_CODEC_PROPERTY_CLOSED_CAPTIONS;
+    }
+
+    if (sei->dynamic_hdr_plus.info) {
+        AVBufferRef *info_ref = av_buffer_ref(sei->dynamic_hdr_plus.info);
+        if (!info_ref)
+            return AVERROR(ENOMEM);
+        ret = ff_frame_new_side_data_from_buf(avctx, frame, AV_FRAME_DATA_DYNAMIC_HDR_PLUS, &info_ref);
+        if (ret < 0)
+            return ret;
+        av_buffer_unref(&sei->dynamic_hdr_plus.info);
     }
 
     ret = h2645_sei_to_side_data(avctx, sei, &frame->side_data, &frame->nb_side_data);

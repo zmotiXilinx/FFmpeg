@@ -41,6 +41,7 @@
 #include "internal.h"
 #include "error_resilience.h"
 #include "avcodec.h"
+#include "decode.h"
 #include "h264.h"
 #include "h264dec.h"
 #include "h2645_parse.h"
