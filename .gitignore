@@ -48,3 +48,4 @@ win-deps_build.log
 *.code-workspace
 .vscode/
 docker/.bash_history
+tests/customtool/out

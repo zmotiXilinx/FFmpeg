@@ -1,0 +1,16 @@
+01
+0:00:00,000 --> 00:00:01,500
+Look at my kimono!
+
+02
+0:00:02,500 --> 00:00:04,000
+I wonder what's for lunch
+
+03
+0:00:04,200 --> 00:00:06,500
+Walking is hard work
+
+04
+0:00:07,100 --> 00:00:07,966
+OMG! I need water!!
+

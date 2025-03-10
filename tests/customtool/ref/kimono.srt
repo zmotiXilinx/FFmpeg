@@ -1,0 +1,35 @@
+1
+00:00:00,000 --> 00:00:01,500
+Look at my kimono!
+
+2
+00:00:02,500 --> 00:00:04,000
+I wonder what's for lunch
+
+3
+00:00:04,200 --> 00:00:6,500
+Walking is hard work
+
+4
+00:00:7,100 --> 00:00:9,000
+OMG! I need water!!
+
+5
+00:00:16,000 --> 00:00:20,000
+That's it! I am done!
+
+6
+00:00:21,000 --> 00:00:25,000
+You can adjust the timing to match your video.
+
+7
+00:00:26,000 --> 00:00:30,000
+Make sure the subtitle text is clear and readable.
+
+8
+00:00:31,000 --> 00:00:35,000
+And that's how you create an SRT subtitle file!
+
+9
+00:00:36,000 --> 00:00:40,000
+Enjoy adding subtitles to your videos!
