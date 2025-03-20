@@ -36,6 +36,7 @@ typedef struct ExtractCCContext {
     size_t ccTextPrevBufferLen;
     void *ccTextBuffer;
     size_t ccTextBufferLen;
+    caption_frame_t cc_frame;
 } ExtractCCContext;
 
 #define OFFSET(x) offsetof(ExtractCCContext, x)
@@ -78,6 +79,8 @@ static av_cold int init(AVFilterContext *ctx)
     }
     ccCtx->ccTextPrevBufferLen = -1;
 
+    caption_frame_init(&ccCtx->cc_frame);
+
     return 0;
 }
 
@@ -115,11 +118,10 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     AVFilterLink *outlink = ctx->outputs[0];
     FilterLink *il = ff_filter_link(inlink);
     AVFrame *out = NULL;
+    libcaption_stauts_t cc_packet_status = LIBCAPTION_OK;
 
     double frameTimestamp = ccCtx->frameCount * av_q2d(av_inv_q(il->frame_rate));
     int direct = 0;
-    caption_frame_t frame;
-    int frameCCNum = 0;
 
     if (av_frame_is_writable(in)) {
         direct = 1;
@@ -133,16 +135,12 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
         av_frame_copy_props(out, in);
     }
 
-    caption_frame_init(&frame);
-
     for (int i = 0; i < in->nb_side_data; ++i) {
       if (in->side_data[i]->type == AV_FRAME_DATA_A53_CC) {
         void* sei_data = NULL;
         size_t sei_size = 0;
         int ret = 0;
         cea708_t *cea708 = NULL;
-
-        ++frameCCNum;
 
         ret = ff_alloc_a53_sei(in, 0, &sei_data, &sei_size, i);
         if (ret < 0) {
@@ -162,16 +160,17 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
           av_log(ctx, AV_LOG_ERROR, "Failed to parse closed captions\n");
           return AVERROR(EINVAL);
         }
-        cea708_to_caption_frame(&frame, cea708);
+        cc_packet_status = cea708_to_caption_frame(&ccCtx->cc_frame, cea708);
+        // fprintf(stderr, "F#%u packet_status: %d\n", ccCtx->frameCount, cc_packet_status);
       }
     }
 
-    if (frameCCNum > 0) {
+    if (cc_packet_status == LIBCAPTION_READY) {
       if (av_log_get_level() >= AV_LOG_DEBUG) {
-        caption_frame_dump(&frame);  // dump frame for debugging
+        caption_frame_dump(&ccCtx->cc_frame);  // dump frame for debugging
       }
       // remove duplicate captions and update srt timestamp/duration
-      ccCtx->ccTextBufferLen = caption_frame_to_text(&frame, ccCtx->ccTextBuffer);
+      ccCtx->ccTextBufferLen = caption_frame_to_text(&ccCtx->cc_frame, ccCtx->ccTextBuffer);
       if (ccCtx->ccTextBufferLen > 0) {
         if (ccCtx->ccTextBufferLen == ccCtx->ccTextPrevBufferLen &&
             memcmp(ccCtx->ccTextBuffer, ccCtx->ccTextPrevBuffer, ccCtx->ccTextBufferLen) == 0) {
@@ -179,17 +178,14 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
           ccCtx->srt->cue_tail->duration += av_q2d(av_inv_q(il->frame_rate));
         } else {
           // add caption to srt for dumping at the end of the video
-          srt_cue_from_caption_frame(&frame, ccCtx->srt);
+          srt_cue_from_caption_frame(&ccCtx->cc_frame, ccCtx->srt);
         }
       }
       // record previous caption text for next comparison
-      ccCtx->ccTextPrevBufferLen = caption_frame_to_text(&frame, ccCtx->ccTextPrevBuffer);
+      ccCtx->ccTextPrevBufferLen = caption_frame_to_text(&ccCtx->cc_frame, ccCtx->ccTextPrevBuffer);
     }
 
     ccCtx->frameCount += 1;
-
-    
-    
 
     if (!direct)
         av_frame_free(&in);
